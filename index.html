@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>연립방정식 빈출(3)</title>
+  <!-- MathJax 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+  <style>
+    body {
+      background-color: #ffffff;
+      color: #000000;
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    #startScreen, #quizScreen, #endScreen {
+      margin: 10px 0;
+    }
+    .hidden {
+      display: none;
+    }
+    .energy-bar {
+      width: 200px;
+      height: 10px;
+      background-color: #ddd;
+      position: relative;
+      margin: 10px 0;
+    }
+    .energy-bar-fill {
+      width: 100%;
+      height: 100%;
+      background-color: #000000;
+      transition: width 0.2s;
+    }
+    .choiceContainer {
+      margin: 5px 0;
+    }
+    .correct {
+      color: #0000ff;
+      font-weight: bold;
+    }
+    .incorrect {
+      color: #ff0000;
+      font-weight: bold;
+    }
+    button {
+      background-color: #000000;
+      color: #ffffff;
+      border: none;
+      padding: 6px 12px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:disabled {
+      background-color: #999999;
+      cursor: not-allowed;
+    }
+    #response {
+      margin-top: 10px;
+      white-space: pre-wrap;
+    }
+    #overallTime {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+<div id="startScreen">
+  <h1>연립방정식 빈출(3)</h1>
+  <label>이름: <input type="text" id="playerName" /></label>
+  <div style="margin-top:10px;">
+    난이도 선택:
+    <select id="difficulty">
+      <option value="top">최상 (문제당 20점, 제한 20초)</option>
+      <option value="high">상 (문제당 15점, 제한 30초)</option>
+      <option value="mid">중 (문제당 13점, 제한 40초)</option>
+      <option value="low">하 (문제당 10점, 제한 없음)</option>
+    </select>
+  </div>
+  <button onclick="startGame()">게임 시작</button>
+</div>
+
+<div id="quizScreen" class="hidden">
+  <div>남은 기회: <span id="lives">3</span></div>
+  <div class="energy-bar" id="energyBar">
+    <div class="energy-bar-fill" id="energyBarFill"></div>
+  </div>
+  <div id="overallTime">전체 진행 시간: 0초 경과</div>
+  <div id="questionArea"></div>
+  <div id="choicesArea"></div>
+  <div id="feedback"></div>
+  <button id="submitBtn" onclick="submitAnswer()">정답 제출</button>
+  <button id="nextBtn" onclick="nextQuestion()" disabled>다음 문제</button>
+</div>
+
+<div id="endScreen" class="hidden">
+  <h2>게임 종료</h2>
+  <div>최종 점수: <span id="finalScore"></span></div>
+  <button onclick="sendScore()">점수전송</button>
+  <div id="response"></div>
+</div>
+
+<script>
+// -----------------------------------------------------------------------------------
+// 1) 문제 데이터 구성 (총 5유형, 각 7문제 = 35문제)
+//    - 모든 수식은 \\(...\\) 형태로 작성
+//    - choices는 보기 5개, answer는 정답 인덱스(0~4)
+// -----------------------------------------------------------------------------------
+
+// 유형별 문제(원문 + 변형 6문제) 총 35개
+// 문제는 아래 배열에 임의로 넣고, 이후 전체를 무작위로 섞어서 출제
+
+const allQuestions = [
+  // -----------------------------------------------------
+  // Type1 (x+y 묻기) - 총 7문제
+  // #12 (원본)
+  {
+    question: "연립방정식 \\(2x + 5y = 11\\), \\(3x - 2y = 7\\)를 풀면, \\(x + y\\)는?",
+    choices: ["1", "2", "3", "4", "5"],
+    answer: 3 // 정답: 4 (인덱스 3)
+  },
+  // 새 6문제
+  {
+    question: "연립방정식 \\(3x + 4y = 10\\), \\(2x - y = 3\\)를 풀면, \\(x + y\\)는?",
+    choices: ["2", "3", "4", "5", "6"],
+    answer: 1 // 정답: 3 (인덱스 1)
+  },
+  {
+    question: "연립방정식 \\(2x + 3y = 12\\), \\(4x - y = 10\\)를 풀면, \\(x + y\\)는?",
+    choices: ["4", "5", "6", "7", "8"],
+    answer: 1 // 정답: 5 (인덱스 1)
+  },
+  {
+    question: "연립방정식 \\(x + 2y = -1\\), \\(3x - y = 4\\)를 풀면, \\(x + y\\)는?",
+    choices: ["0", "1", "2", "-1", "-2"],
+    answer: 0 // 정답: 0 (x=2, y=-2 -> actually let's solve quickly? Wait actually let's do it carefully.)
+              // Let's quickly check correctness:
+              //  x+2y=-1 ...(1)
+              // 3x-y=4   ...(2)
+              // Solve:
+              // from (1): x=-1-2y
+              // put in (2): 3(-1-2y)-y=4 => -3-6y-y=4 => -3-7y=4 => -7y=7 => y=-1 => x=-1-2(-1)=1
+              // x+y=1+(-1)=0
+  },
+  {
+    question: "연립방정식 \\(5x + 2y = 26\\), \\(3x - 3y = 3\\)를 풀면, \\(x + y\\)는?",
+    choices: ["5", "6", "7", "8", "9"],
+    answer: 2 // 정답: 7
+  },
+  {
+    question: "연립방정식 \\(2x + 3y = 10\\), \\(4x - y = -8\\)를 풀면, \\(x + y\\)는?",
+    choices: ["1", "2", "3", "4", "5"],
+    answer: 2 // 정답: 3 (실제로 x=-1, y=4 => x+y=3)
+  },
+  {
+    question: "연립방정식 \\(3x - 2y = 10\\), \\(x + 4y = -6\\)를 풀면, \\(x + y\\)는?",
+    choices: ["-2", "0", "2", "3", "-4"],
+    answer: 1 // 정답: 0
+  },
+
+  // -----------------------------------------------------
+  // Type2 (파라미터 a를 구하기) - 총 7문제
+  // #13 (원본)
+  {
+    question:
+      "연립방정식 \\(2x - y = -4\\), \\(x + 3y = a\\)의 해가 \\(x = 2y + 1\\)을 만족시킬 때, 상수 \\(a\\)의 값은?",
+    choices: ["-9", "-7", "-3", "3", "7"],
+    answer: 0 // 정답: -9
+  },
+  // 새 6문제
+  {
+    question:
+      "연립방정식 \\(3x - 2y = 1\\), \\(x + 4y = a\\)의 해가 \\(x = y + 2\\)를 만족시킬 때, \\(a\\)의 값은?",
+    choices: ["-25", "-23", "-21", "-15", "-10"],
+    answer: 1 // 정답: -23
+  },
+  {
+    question:
+      "연립방정식 \\(2x - 3y = 7\\), \\(x + 2y = a\\)의 해가 \\(x = 3y - 1\\)을 만족시킬 때, \\(a\\)의 값은?",
+    choices: ["10", "12", "14", "15", "16"],
+    answer: 2 // 정답: 14
+  },
+  {
+    question:
+      "연립방정식 \\(2x - y = 4\\), \\(x + y = a\\)의 해가 \\(x = y + 1\\)을 만족시킬 때, \\(a\\)의 값은?",
+    choices: ["3", "4", "5", "6", "7"],
+    answer: 2 // 정답: 5
+  },
+  {
+    question:
+      "연립방정식 \\(3x - y = -1\\), \\(x + 2y = a\\)의 해가 \\(x = 2y + 1\\)을 만족시킬 때, \\(a\\)의 값은?",
+    choices: ["\\(-\\dfrac{11}{5}\\)", "\\(-\\dfrac{9}{5}\\)", "-3", "\\(-\\dfrac{7}{5}\\)", "0"],
+    answer: 0 // 정답: -11/5
+  },
+  {
+    question:
+      "연립방정식 \\(x - 2y = -3\\), \\(x + 3y = a\\)의 해가 \\(x = 3y + 2\\)를 만족시킬 때, \\(a\\)의 값은?",
+    choices: ["-30", "-28", "-25", "-20", "-15"],
+    answer: 1 // 정답: -28
+  },
+  {
+    question:
+      "연립방정식 \\(4x - y = 1\\), \\(x + y = a\\)의 해가 \\(x = y - 1\\)을 만족시킬 때, \\(a\\)의 값은?",
+    choices: [
+      "\\(\\dfrac{7}{3}\\)",
+      "\\(\\dfrac{8}{3}\\)",
+      "\\(\\dfrac{5}{2}\\)",
+      "\\(\\dfrac{9}{3}\\)",
+      "3"
+    ],
+    answer: 0 // 정답: 7/3
+  },
+
+  // -----------------------------------------------------
+  // Type3 (두 시스템 해가 같을 때 2b-a 묻기) - 총 7문제
+  // #14 (원본)
+  {
+    question:
+      "두 연립방정식 \\(\\{ax - by = 11,\\;4x + y = 15\\}\\)와 \\(\\{ax + by = 5,\\;x - 4y = 8\\}\\)의 해가 같을 때, \\(2b - a\\)의 값은?",
+    choices: ["-8", "1", "4", "5", "8"],
+    answer: 2 // 정답: 4
+  },
+  // 새 6문제
+  {
+    question:
+      "두 연립방정식 \\(\\{ax + by = 6,\\;x + y = 4\\}\\)와 \\(\\{ax - by = 2,\\;2x - y = 3\\}\\)의 해가 같을 때, \\(2b - a\\)는?",
+    choices: ["-1", "0", "1", "2", "3"],
+    answer: 0 // 정답: -1
+  },
+  {
+    question:
+      "두 연립방정식 \\(\\{ax - by = 3,\\;4x + y = 3\\}\\)와 \\(\\{ax + by = 1,\\;x - 4y = 5\\}\\)의 해가 같을 때, \\(2b - a\\)는?",
+    choices: ["-1", "0", "1", "2", "4"],
+    answer: 1 // 정답: 0
+  },
+  {
+    question:
+      "두 연립방정식 \\(\\{ax - by = 7,\\;4x + y = 2\\}\\)와 \\(\\{ax + by = 3,\\;x - 4y = 9\\}\\)의 해가 같을 때, \\(2b - a\\)는?",
+    choices: ["-4", "-3", "-2", "-1", "0"],
+    answer: 1 // 정답: -3
+  },
+  {
+    question:
+      "두 연립방정식 \\(\\{ax - by = 1,\\;4x + y = 6\\}\\)와 \\(\\{ax + by = 5,\\;x - 4y = -7\\}\\)의 해가 같을 때, \\(2b - a\\)는?",
+    choices: ["-2", "-1", "0", "1", "2"],
+    answer: 1 // 정답: -1
+  },
+  {
+    question:
+      "두 연립방정식 \\(\\{ax - by = 5,\\;4x + y = 4\\}\\)와 \\(\\{ax + by = 5,\\;x - 4y = 1\\}\\)의 해가 같을 때, \\(2b - a\\)는?",
+    choices: ["-2", "-1", "0", "1", "2"],
+    answer: 1 // 정답: -1
+  },
+  {
+    question:
+      "두 연립방정식 \\(\\{ax - by = 9,\\;4x + y = 1\\}\\)와 \\(\\{ax + by = -3,\\;x - 4y = 13\\}\\)의 해가 같을 때, \\(2b - a\\)는?",
+    choices: ["-1", "0", "1", "2", "3"],
+    answer: 2 // 정답: 1
+  },
+
+  // -----------------------------------------------------
+  // Type4 (괄호식, x+y 묻기) - 총 7문제
+  // #15 (원본)
+  {
+    question:
+      "연립방정식 \\(2(x+y) + 14 = 5y\\), \\(3x - 4 = 2(x - 2y)\\)의 해 \\(x, y\\)를 구해 더하면?",
+    choices: ["-12", "-6", "2", "-8", "-2"],
+    answer: 4 // 정답: -2
+  },
+  // 새 6문제
+  {
+    question:
+      "연립방정식 \\(3(x+y) + 6 = 4y\\), \\(2x - 1 = 3(x - y)\\)의 해 \\(x, y\\)를 구해 더하면?",
+    // 원래 choices에 -2.5와 -5/2가 중복되어 있었으므로 -2.5를 제거/수정
+    choices: ["-3", "-2", "-4", "\\(-\\dfrac{5}{2}\\)", "0"],
+    answer: 3 // 정답: -5/2
+  },
+  {
+    question:
+      "연립방정식 \\(2(x+y) + 8 = 3y\\), \\(4x - 3 = x - 2y\\)의 해 \\(x, y\\)를 구해 더하면?",
+    choices: ["2", "\\(\\dfrac{17}{7}\\)", "3", "5", "10"],
+    answer: 1 // 정답: 17/7
+  },
+  {
+    question:
+      "연립방정식 \\(3(x+y) + 9 = 6y\\), \\(2x - 5 = 2(x - 3y)\\)의 해 \\(x, y\\)를 구해 더하면?",
+    choices: ["-2", "\\(-\\dfrac{4}{3}\\)", "-1", "0", "2"],
+    answer: 1 // 정답: -4/3
+  },
+  {
+    question:
+      "연립방정식 \\(4(x+y) + 4 = 5y\\), \\(3x - 1 = 2(x - y)\\)의 해 \\(x, y\\)를 구해 더하면?",
+    choices: ["-3", "-2", "\\(-\\dfrac{17}{7}\\)", "\\(-\\dfrac{16}{7}\\)", "1"],
+    answer: 2 // 정답: -17/7
+  },
+  {
+    question:
+      "연립방정식 \\(3(x+y) + 3 = 4y\\), \\(2x - 4 = 2(x - 2y)\\)의 해 \\(x, y\\)를 구해 더하면?",
+    choices: ["\\(-\\dfrac{1}{3}\\)", "0", "\\(\\dfrac{1}{3}\\)", "1", "2"],
+    answer: 2 // 정답: 1/3
+  },
+  {
+    question:
+      "연립방정식 \\(2(x+y) + 4 = 2y\\), \\(5x - 6 = 3(x - 2y)\\)의 해 \\(x, y\\)를 구해 더하면?",
+    choices: ["\\(-\\dfrac{1}{3}\\)", "0", "\\(\\dfrac{1}{3}\\)", "\\(-\\dfrac{2}{3}\\)", "-1"],
+    answer: 0 // 정답: -1/3
+  },
+
+  // -----------------------------------------------------
+  // Type5 (분수, 소수, (x,y) 묻기) - 총 7문제
+  // #16 (원본)
+  {
+    question:
+      "연립방정식 \\(\\dfrac{x}{4} + \\dfrac{y}{5} = \\dfrac{18}{5}\\), \\(0.4x - 0.3y = 0.8\\)를 풀면?",
+    choices: [
+      "\\((x, y) = (-8, 8)\\)",
+      "\\((x, y) = (-4, -5)\\)",
+      "\\((x, y) = (8, -8)\\)",
+      "\\((x, y) = (8, 8)\\)",
+      "\\((x, y) = (8, 10)\\)"
+    ],
+    answer: 3 // 정답: (8,8)
+  },
+  // 새 6문제
+  {
+    question:
+      "연립방정식 \\(\\dfrac{x}{2} + \\dfrac{y}{3} = 5\\), \\(0.5x - 0.5y = 0\\)를 풀면?",
+    choices: [
+      "\\((6,6)\\)",
+      "\\((5,5)\\)",
+      "\\((6,5)\\)",
+      "\\((5,6)\\)",
+      "\\((7,7)\\)"
+    ],
+    answer: 0 // (6,6)
+  },
+  {
+    question:
+      "연립방정식 \\(\\dfrac{x}{3} + \\dfrac{y}{2} = 4\\), \\(0.2x + 0.4y = 2\\)를 풀면?",
+    choices: [
+      "\\((18, -4)\\)",
+      "\\((12, -6)\\)",
+      "\\((16, -2)\\)",
+      "\\((20, -4)\\)",
+      "\\((18, 4)\\)"
+    ],
+    answer: 0 // (18, -4)
+  },
+  {
+    question:
+      "연립방정식 \\(\\dfrac{x}{5} + \\dfrac{y}{2} = 7\\), \\(0.6x - 0.2y = 2\\)를 풀면?",
+    choices: [
+      "\\(\\bigl(\\dfrac{120}{17},\\;\\dfrac{190}{17}\\bigr)\\)",
+      "\\(\\bigl(\\dfrac{100}{17},\\;\\dfrac{170}{17}\\bigr)\\)",
+      "\\((6, 4)\\)",
+      "\\((10, 6)\\)",
+      "\\((12, 10)\\)"
+    ],
+    answer: 0 // (120/17, 190/17)
+  },
+  {
+    question:
+      "연립방정식 \\(\\dfrac{x}{6} + \\dfrac{y}{3} = 5\\), \\(0.3x - 0.1y = 2\\)를 풀면?",
+    choices: [
+      "\\((8, 12)\\)",
+      "\\((10, 10)\\)",
+      "\\((10, 8)\\)",
+      "\\((0, 30)\\)",
+      "\\((12, 6)\\)"
+    ],
+    answer: 1 // (10,10)
+  },
+  {
+    question:
+      "연립방정식 \\(\\dfrac{x}{4} + \\dfrac{y}{2} = 6\\), \\(0.5x + 0.5y = 6\\)를 풀면?",
+    choices: [
+      "\\((0, 12)\\)",
+      "\\((6, 6)\\)",
+      "\\((8, 4)\\)",
+      "\\((2, 10)\\)",
+      "\\((12, 0)\\)"
+    ],
+    answer: 0 // (0,12)
+  },
+  {
+    question:
+      "연립방정식 \\(\\dfrac{x}{3} + \\dfrac{y}{3} = 4\\), \\(0.4x + 0.8y = 8\\)를 풀면?",
+    choices: [
+      "\\((4, 8)\\)",
+      "\\((8, 4)\\)",
+      "\\((6, 6)\\)",
+      "\\((2, 10)\\)",
+      "\\((5, 5)\\)"
+    ],
+    answer: 0 // (4,8)
+  }
+];
+
+// -----------------------------------------------------------------------------------
+// 2) 난이도별 시간 제한 & 점수 설정
+// -----------------------------------------------------------------------------------
+let timeLimitPerQuestion = 0; // 문제당 제한 시간 (초) - 하 난이도면 0(무제한)
+let scorePerQuestion = 0;     // 난이도별 점수
+let overallTime = 0;          // 전체 게임 시간 (초)
+let overallTimer = null;      // 전체 게임 시간 측정용
+let questionTimer = null;     // 문제당 시간 측정용
+let timeLeft = 0;             // 현재 문제 남은 시간
+let lives = 3;                // 3번 틀리면 게임 종료
+let currentQuestionIndex = 0; // 0~34 (처음 35문제 1바퀴)
+let questionOrder = [];       // 처음 35문제를 랜덤 순서로 담고, 이후 무한 랜덤
+let score = 0;                // 점수
+let answeredThisQuestion = false; // 현재 문제에 대해 정답 제출 여부
+let nameInput = "";           // 플레이어 이름
+
+// -----------------------------------------------------------------------------------
+// 3) 유틸 함수 (shuffleArray, etc.)
+// -----------------------------------------------------------------------------------
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+function shuffleChoices(q) {
+  // 보기 순서를 섞되, 정답 위치도 바꿔야 함
+  // 현재 q.choices, q.answer
+  const choiceArr = q.choices.map((c, idx) => ({ text: c, index: idx }));
+  shuffleArray(choiceArr);
+  const newChoices = choiceArr.map(obj => obj.text);
+  const correctIndex = choiceArr.findIndex(obj => obj.index === q.answer);
+  q.choices = newChoices;
+  q.answer = correctIndex;
+}
+
+// -----------------------------------------------------------------------------------
+// 4) 게임 시작
+// -----------------------------------------------------------------------------------
+function startGame() {
+  nameInput = document.getElementById("playerName").value.trim();
+  if (!nameInput) {
+    alert("이름을 입력해주세요.");
+    return;
+  }
+  const diff = document.getElementById("difficulty").value;
+  switch(diff) {
+    case "top":
+      timeLimitPerQuestion = 20; 
+      scorePerQuestion = 20;
+      break;
+    case "high":
+      timeLimitPerQuestion = 30;
+      scorePerQuestion = 15;
+      break;
+    case "mid":
+      timeLimitPerQuestion = 40;
+      scorePerQuestion = 13;
+      break;
+    case "low":
+      timeLimitPerQuestion = 0;  // 무제한
+      scorePerQuestion = 10;
+      break;
+  }
+
+  // 문제 전체를 섞는다
+  shuffleArray(allQuestions);
+
+  // 각 문제마다 보기 섞기
+  for (let i = 0; i < allQuestions.length; i++) {
+    shuffleChoices(allQuestions[i]);
+  }
+
+  // 첫 35문제를 위한 순서
+  questionOrder = Array.from({length: 35}, (_, i) => i);
+
+  // 화면 전환
+  document.getElementById("startScreen").classList.add("hidden");
+  document.getElementById("quizScreen").classList.remove("hidden");
+
+  // 전체 타이머 시작
+  overallTime = 0;
+  overallTimer = setInterval(() => {
+    overallTime++;
+    document.getElementById("overallTime").innerText = `전체 진행 시간: ${overallTime}초 경과`;
+  }, 1000);
+
+  lives = 3;
+  document.getElementById("lives").innerText = lives;
+
+  score = 0;
+  currentQuestionIndex = 0;
+  loadQuestion();
+}
+
+// -----------------------------------------------------------------------------------
+// 5) 문제 로드
+// -----------------------------------------------------------------------------------
+function loadQuestion() {
+  // 문제 표시 초기화
+  document.getElementById("feedback").innerHTML = "";
+  document.getElementById("nextBtn").disabled = true;
+  document.getElementById("submitBtn").disabled = false;
+  answeredThisQuestion = false;
+
+  // 문제 인덱스 결정
+  let qIndex;
+  if (currentQuestionIndex < 35) {
+    // 첫 35문제는 questionOrder를 사용
+    qIndex = questionOrder[currentQuestionIndex];
+  } else {
+    // 35문제 이후는 무작위
+    qIndex = Math.floor(Math.random() * allQuestions.length);
+  }
+  const qData = allQuestions[qIndex];
+
+  // 문제 출력
+  const qArea = document.getElementById("questionArea");
+  qArea.innerHTML = `<p>${qData.question}</p>`;
+
+  // 보기 출력
+  const cArea = document.getElementById("choicesArea");
+  cArea.innerHTML = "";
+  for (let i = 0; i < qData.choices.length; i++) {
+    cArea.innerHTML += `
+      <div class="choiceContainer">
+        <label>
+          <input type="radio" name="choice" value="${i}" />
+          <span>${qData.choices[i]}</span>
+        </label>
+      </div>
+    `;
+  }
+
+  // MathJax 렌더링
+  MathJax.typeset();
+
+  // 시간 제한 세팅
+  if (timeLimitPerQuestion > 0) {
+    timeLeft = timeLimitPerQuestion;
+    updateEnergyBar();
+    if (questionTimer) clearInterval(questionTimer);
+    questionTimer = setInterval(() => {
+      timeLeft--;
+      if (timeLeft < 0) {
+        // 시간 초과 -> 기회 1 감소, 다음 문제로
+        clearInterval(questionTimer);
+        lives--;
+        if (lives <= 0) {
+          endGame();
+        } else {
+          document.getElementById("lives").innerText = lives;
+          // 즉시 다음 문제로
+          nextQuestionAuto(true);
+        }
+      } else {
+        updateEnergyBar();
+      }
+    }, 1000);
+  } else {
+    // 하 난이도(무제한)
+    document.getElementById("energyBarFill").style.width = "100%";
+  }
+}
+
+// -----------------------------------------------------------------------------------
+// 6) 에너지바 업데이트
+// -----------------------------------------------------------------------------------
+function updateEnergyBar() {
+  if (timeLimitPerQuestion === 0) {
+    // 무제한
+    document.getElementById("energyBarFill").style.width = "100%";
+    return;
+  }
+  const ratio = (timeLeft / timeLimitPerQuestion) * 100;
+  document.getElementById("energyBarFill").style.width = ratio + "%";
+}
+
+// -----------------------------------------------------------------------------------
+// 7) 정답 제출
+// -----------------------------------------------------------------------------------
+function submitAnswer() {
+  if (answeredThisQuestion) return; // 이미 제출했으면 무시
+
+  const qIndex = (currentQuestionIndex < 35)
+    ? questionOrder[currentQuestionIndex]
+    : Math.floor(Math.random() * allQuestions.length);
+  const qData = allQuestions[qIndex];
+
+  const radios = document.getElementsByName("choice");
+  let selected = -1;
+  for (let i = 0; i < radios.length; i++) {
+    if (radios[i].checked) {
+      selected = parseInt(radios[i].value, 10);
+      break;
+    }
+  }
+  if (selected === -1) {
+    alert("답안을 선택하세요.");
+    return;
+  }
+
+  // 타이머 중지
+  if (questionTimer) clearInterval(questionTimer);
+
+  answeredThisQuestion = true;
+  document.getElementById("submitBtn").disabled = true;
+  document.getElementById("nextBtn").disabled = false;
+
+  const fb = document.getElementById("feedback");
+  if (selected === qData.answer) {
+    // 정답
+    fb.innerHTML = `<span class="correct">정답입니다!</span>`;
+    score += scorePerQuestion;
+  } else {
+    // 오답
+    fb.innerHTML = `<span class="incorrect">틀렸습니다. 정답은 ${
+      qData.choices[qData.answer]
+    }</span>`;
+    lives--;
+    if (lives <= 0) {
+      endGame();
+      return;
+    }
+    document.getElementById("lives").innerText = lives;
+  }
+}
+
+// -----------------------------------------------------------------------------------
+// 8) "다음 문제" 버튼
+// -----------------------------------------------------------------------------------
+function nextQuestion() {
+  if (!answeredThisQuestion) return; // 아직 제출 안 했으면 무시
+
+  nextQuestionAuto(false);
+}
+
+// 틀리거나 시간초과 등으로 자동 넘어갈 때(버튼이 아닌)
+function nextQuestionAuto(isTimeOver) {
+  // isTimeOver는 시간 초과 등으로 넘어가는 경우
+  if (questionTimer) {
+    clearInterval(questionTimer);
+    questionTimer = null;
+  }
+
+  currentQuestionIndex++;
+  loadQuestion();
+}
+
+// -----------------------------------------------------------------------------------
+// 9) 게임 종료
+// -----------------------------------------------------------------------------------
+function endGame() {
+  if (questionTimer) clearInterval(questionTimer);
+  if (overallTimer) clearInterval(overallTimer);
+
+  document.getElementById("quizScreen").classList.add("hidden");
+  document.getElementById("endScreen").classList.remove("hidden");
+  document.getElementById("finalScore").innerText = score;
+}
+
+// -----------------------------------------------------------------------------------
+// 10) 점수 전송
+// -----------------------------------------------------------------------------------
+function sendScore() {
+  // 서버에 전송
+  saveData("연립방정식 빈출(3)", nameInput, score, overallTime);
+}
+
+// -----------------------------------------------------------------------------------
+// 11) 서버 전송 함수
+// -----------------------------------------------------------------------------------
+async function saveData(game, name, score, elapsedTime) {
+  const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+
+  const requestData = {
+    game,
+    name,
+    score: parseInt(score, 10),
+    elapsedTime: parseInt(elapsedTime, 10)
+  };
+
+  try {
+    const response = await fetch(FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestData)
+    });
+
+    const responseData = await response.json();
+
+    if (response.ok) {
+      document.getElementById('response').innerText =
+        `성공: ${JSON.stringify(responseData, null, 2)}`;
+    } else {
+      document.getElementById('response').innerText =
+        `오류: ${JSON.stringify(responseData, null, 2)}`;
+    }
+  } catch (error) {
+    console.error('요청 실패:', error);
+    document.getElementById('response').innerText =
+      `네트워크 오류: ${error.message}`;
+  }
+}
+</script>
+</body>
+</html>
